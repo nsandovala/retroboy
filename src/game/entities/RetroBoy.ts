@@ -1,8 +1,12 @@
 import Phaser from 'phaser';
 import {
   RETROBOY_ANIM,
+  RETROBOY_RUN_ANIM,
+  RETROBOY_RUN_FRAME_WIDTH,
   RETROBOY_SHEET,
+  RETROBOY_WALK_ANIM,
   registerRetroBoyAnimations,
+  registerRetroBoyMoveAnimations,
 } from './retroboy-animations';
 
 export type PlayerState =
@@ -20,6 +24,7 @@ const CROUCH_HEIGHT = 22;
 const DRAW_WIDTH = 32;
 const DRAW_HEIGHT = 48;
 const DRAW_CROUCH_HEIGHT = 26;
+const DRAW_TURN_WIDTH = 40;
 
 const WALK_SPEED = 120;
 const RUN_SPEED = 210;
@@ -37,12 +42,14 @@ const MAX_FALL_SPEED = 560;
 const COYOTE_TIME_MS = 100;
 const JUMP_BUFFER_MS = 100;
 const LAND_STATE_MS = 90;
+const TURN_MIN_MS = 150;
 
 const TEX_STAND = 'retroboy-placeholder';
 const TEX_CROUCH = 'retroboy-placeholder-crouch';
 const TEX_JUMP = 'retroboy-jump';
 const TEX_DOUBLE_JUMP = 'retroboy-double-jump';
 const TEX_FALL = 'retroboy-fall';
+const TEX_TURN = 'retroboy-turn';
 
 type Keys = {
   left: Phaser.Input.Keyboard.Key;
@@ -71,18 +78,21 @@ export class RetroBoy {
   private coyoteTimer = 0;
   private jumpBufferTimer = 0;
   private landTimer = 0;
+  private turnTimer = 0;
   private wasOnGround = false;
   private jumpConsumed = false;
   private airJumpAvailable = false;
   private doubleJumpActive = false;
   private crouching = false;
   private readonly useAnimations: boolean;
+  private readonly useMoveAnimations: boolean;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     this.scene = scene;
 
     ensurePlaceholderTextures(scene);
     this.useAnimations = registerRetroBoyAnimations(scene);
+    this.useMoveAnimations = registerRetroBoyMoveAnimations(scene);
 
     const initialTexture = this.useAnimations ? RETROBOY_SHEET : TEX_STAND;
     this.sprite = scene.physics.add.sprite(x, y, initialTexture);
@@ -146,7 +156,16 @@ export class RetroBoy {
     }
 
     const inputDir = (rightDown ? 1 : 0) - (leftDown ? 1 : 0);
+    this.turnTimer = Math.max(0, this.turnTimer - deltaMs);
     if (inputDir !== 0) {
+      if (
+        inputDir !== this.facing &&
+        onGround &&
+        !this.crouching &&
+        Math.abs(body.velocity.x) >= 20
+      ) {
+        this.turnTimer = TURN_MIN_MS;
+      }
       this.facing = inputDir as 1 | -1;
     }
 
@@ -200,10 +219,27 @@ export class RetroBoy {
 
     this.state = this.resolveState(onGround, inputDir, runDown, body.velocity);
     this.sprite.setFlipX(this.facing === -1);
+    const turningAgainstMomentum = body.velocity.x * inputDir < -8;
+    const showTurn =
+      onGround &&
+      !this.crouching &&
+      inputDir !== 0 &&
+      (this.turnTimer > 0 || turningAgainstMomentum);
 
     if (this.useAnimations) {
       this.sprite.anims.play(RETROBOY_ANIM[this.state], true);
+    } else if (showTurn && this.scene.textures.exists(TEX_TURN)) {
+      if (this.sprite.anims.isPlaying) this.sprite.anims.stop();
+      if (this.sprite.texture.key !== TEX_TURN) this.sprite.setTexture(TEX_TURN);
+      body.setOffset((DRAW_TURN_WIDTH - WIDTH) / 2, DRAW_HEIGHT - HEIGHT);
+    } else if (this.useMoveAnimations && (this.state === 'walk' || this.state === 'run')) {
+      this.sprite.anims.play(
+        this.state === 'run' ? RETROBOY_RUN_ANIM : RETROBOY_WALK_ANIM,
+        true,
+      );
+      body.setOffset((RETROBOY_RUN_FRAME_WIDTH - WIDTH) / 2, DRAW_HEIGHT - HEIGHT);
     } else {
+      if (this.sprite.anims.isPlaying) this.sprite.anims.stop();
       const nextTexture = this.crouching
         ? TEX_CROUCH
         : this.state === 'jump'
@@ -214,6 +250,10 @@ export class RetroBoy {
       if (this.sprite.texture.key !== nextTexture) {
         this.sprite.setTexture(nextTexture);
       }
+      body.setOffset(
+        (DRAW_WIDTH - WIDTH) / 2,
+        this.crouching ? DRAW_CROUCH_HEIGHT - CROUCH_HEIGHT : DRAW_HEIGHT - HEIGHT,
+      );
     }
   }
 

@@ -2,6 +2,11 @@ import Phaser from 'phaser';
 import type { PlayerState } from './RetroBoy';
 
 export const RETROBOY_SHEET = 'retroboy-sheet';
+export const RETROBOY_RUN_SHEET = 'retroboy-run-sheet';
+export const RETROBOY_WALK_ANIM = 'retroboy-walk-cycle';
+export const RETROBOY_RUN_ANIM = 'retroboy-run-cycle';
+export const RETROBOY_RUN_FRAME_WIDTH = 64;
+export const RETROBOY_RUN_FRAME_HEIGHT = 48;
 
 export const RETROBOY_FRAME_WIDTH = 32;
 export const RETROBOY_FRAME_HEIGHT = 48;
@@ -46,6 +51,26 @@ export function registerRetroBoyAnimations(scene: Phaser.Scene): boolean {
       frames: scene.anims.generateFrameNumbers(RETROBOY_SHEET, { start, end }),
       frameRate,
       repeat,
+    });
+  }
+  return true;
+}
+
+export function registerRetroBoyMoveAnimations(scene: Phaser.Scene): boolean {
+  if (!scene.textures.exists(RETROBOY_RUN_SHEET)) return false;
+  for (const [key, frameRate] of [
+    [RETROBOY_WALK_ANIM, 10],
+    [RETROBOY_RUN_ANIM, 14],
+  ] as const) {
+    if (scene.anims.exists(key)) continue;
+    scene.anims.create({
+      key,
+      frames: scene.anims.generateFrameNumbers(RETROBOY_RUN_SHEET, {
+        start: 0,
+        end: 3,
+      }),
+      frameRate,
+      repeat: -1,
     });
   }
   return true;
