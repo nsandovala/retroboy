@@ -1,4 +1,9 @@
 import Phaser from 'phaser';
+import {
+  RETROBOY_ANIM,
+  RETROBOY_SHEET,
+  registerRetroBoyAnimations,
+} from './retroboy-animations';
 
 export type PlayerState =
   | 'idle'
@@ -25,6 +30,7 @@ const AIR_CONTROL = 0.6;
 
 const GRAVITY = 1500;
 const JUMP_VELOCITY = -520;
+const DOUBLE_JUMP_VELOCITY = -480;
 const JUMP_CUT_VELOCITY = -160;
 const MAX_FALL_SPEED = 560;
 
@@ -34,6 +40,9 @@ const LAND_STATE_MS = 90;
 
 const TEX_STAND = 'retroboy-placeholder';
 const TEX_CROUCH = 'retroboy-placeholder-crouch';
+const TEX_JUMP = 'retroboy-jump';
+const TEX_DOUBLE_JUMP = 'retroboy-double-jump';
+const TEX_FALL = 'retroboy-fall';
 
 type Keys = {
   left: Phaser.Input.Keyboard.Key;
@@ -52,6 +61,10 @@ export class RetroBoy {
   state: PlayerState = 'idle';
   facing: 1 | -1 = 1;
 
+  get jumpsUsed(): number {
+    return this.jumpConsumed ? (this.doubleJumpActive ? 2 : 1) : 0;
+  }
+
   private readonly scene: Phaser.Scene;
   private readonly keys: Keys;
 
@@ -60,14 +73,19 @@ export class RetroBoy {
   private landTimer = 0;
   private wasOnGround = false;
   private jumpConsumed = false;
+  private airJumpAvailable = false;
+  private doubleJumpActive = false;
   private crouching = false;
+  private readonly useAnimations: boolean;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     this.scene = scene;
 
     ensurePlaceholderTextures(scene);
+    this.useAnimations = registerRetroBoyAnimations(scene);
 
-    this.sprite = scene.physics.add.sprite(x, y, TEX_STAND);
+    const initialTexture = this.useAnimations ? RETROBOY_SHEET : TEX_STAND;
+    this.sprite = scene.physics.add.sprite(x, y, initialTexture);
     this.sprite.setOrigin(0.5, 1);
     this.sprite.setCollideWorldBounds(true);
 
@@ -115,6 +133,8 @@ export class RetroBoy {
     if (onGround) {
       this.coyoteTimer = COYOTE_TIME_MS;
       this.jumpConsumed = false;
+      this.airJumpAvailable = false;
+      this.doubleJumpActive = false;
     } else {
       this.coyoteTimer = Math.max(0, this.coyoteTimer - deltaMs);
     }
@@ -154,6 +174,18 @@ export class RetroBoy {
       this.jumpBufferTimer = 0;
       this.coyoteTimer = 0;
       this.jumpConsumed = true;
+      this.airJumpAvailable = true;
+      this.doubleJumpActive = false;
+    } else if (
+      canJump &&
+      !onGround &&
+      this.jumpBufferTimer > 0 &&
+      this.airJumpAvailable
+    ) {
+      body.velocity.y = DOUBLE_JUMP_VELOCITY;
+      this.jumpBufferTimer = 0;
+      this.airJumpAvailable = false;
+      this.doubleJumpActive = true;
     }
 
     if (jumpJustReleased && body.velocity.y < JUMP_CUT_VELOCITY) {
@@ -168,6 +200,21 @@ export class RetroBoy {
 
     this.state = this.resolveState(onGround, inputDir, runDown, body.velocity);
     this.sprite.setFlipX(this.facing === -1);
+
+    if (this.useAnimations) {
+      this.sprite.anims.play(RETROBOY_ANIM[this.state], true);
+    } else {
+      const nextTexture = this.crouching
+        ? TEX_CROUCH
+        : this.state === 'jump'
+          ? this.doubleJumpActive ? TEX_DOUBLE_JUMP : TEX_JUMP
+          : this.state === 'fall'
+            ? TEX_FALL
+            : TEX_STAND;
+      if (this.sprite.texture.key !== nextTexture) {
+        this.sprite.setTexture(nextTexture);
+      }
+    }
   }
 
   private resolveState(
@@ -196,11 +243,11 @@ export class RetroBoy {
     this.crouching = on;
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     if (on) {
-      this.sprite.setTexture(TEX_CROUCH);
+      if (!this.useAnimations) this.sprite.setTexture(TEX_CROUCH);
       body.setSize(WIDTH, CROUCH_HEIGHT);
       body.setOffset((DRAW_WIDTH - WIDTH) / 2, DRAW_CROUCH_HEIGHT - CROUCH_HEIGHT);
     } else {
-      this.sprite.setTexture(TEX_STAND);
+      if (!this.useAnimations) this.sprite.setTexture(TEX_STAND);
       body.setSize(WIDTH, HEIGHT);
       body.setOffset((DRAW_WIDTH - WIDTH) / 2, DRAW_HEIGHT - HEIGHT);
     }

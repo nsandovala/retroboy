@@ -86,6 +86,7 @@ export class WorldOneScene extends Phaser.Scene {
       `STATE: ${this.player.state}`,
       `VX: ${body.velocity.x.toFixed(0)}`,
       `VY: ${body.velocity.y.toFixed(0)}`,
+      `JUMPS: ${this.player.jumpsUsed}/2`,
       `ON GROUND: ${onGround}`,
     ]);
   }
